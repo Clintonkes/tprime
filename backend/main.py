@@ -13,7 +13,7 @@ from pathlib import Path
 from database import init_db, get_db, Booking, Contact, Admin
 from schemas import (
     BookingCreate, BookingResponse, BookingStatusUpdate,
-    ContactCreate, ContactResponse,
+    ContactCreate, ContactResponse, ContactStatusUpdate,
     AdminLogin, Token,
 )
 from auth import verify_password, get_password_hash, create_access_token, get_current_admin
@@ -94,6 +94,8 @@ def create_booking(data: BookingCreate, db: Session = Depends(get_db)):
         phone=data.phone,
         preferred_date=data.preferred_date,
         preferred_time=data.preferred_time,
+        lawn_size=data.lawn_size,
+        notes=data.notes,
         status="pending",
     )
     db.add(booking)
@@ -110,6 +112,8 @@ def create_booking(data: BookingCreate, db: Session = Depends(get_db)):
             frequency=data.frequency,
             preferred_date=data.preferred_date,
             preferred_time=data.preferred_time,
+            lawn_size=data.lawn_size,
+            notes=data.notes,
         ),
     )
 
@@ -211,12 +215,58 @@ def update_booking_status(
     return booking
 
 
+@app.delete("/api/admin/bookings/{booking_id}", status_code=204)
+def delete_booking(
+    booking_id: int,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(get_current_admin),
+):
+    booking = db.query(Booking).filter(Booking.id == booking_id).first()
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    db.delete(booking)
+    db.commit()
+
+
 @app.get("/api/admin/contacts", response_model=list[ContactResponse])
 def list_contacts(
     db: Session = Depends(get_db),
     admin: Admin = Depends(get_current_admin),
 ):
     return db.query(Contact).order_by(Contact.created_at.desc()).all()
+
+
+@app.patch("/api/admin/contacts/{contact_id}", response_model=ContactResponse)
+def update_contact_status(
+    contact_id: int,
+    data: ContactStatusUpdate,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(get_current_admin),
+):
+    if data.status not in ("new", "read", "archived"):
+        raise HTTPException(status_code=400, detail="Invalid status")
+
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+
+    contact.status = data.status
+    db.commit()
+    db.refresh(contact)
+    return contact
+
+
+@app.delete("/api/admin/contacts/{contact_id}", status_code=204)
+def delete_contact(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    admin: Admin = Depends(get_current_admin),
+):
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    db.delete(contact)
+    db.commit()
 
 
 @app.get("/api/admin/dashboard")
@@ -246,14 +296,19 @@ if __name__ == "__main__":
 
 
 # ── Static Frontend (must be last) ───────────────────────────────
-DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
+# Statically snapshotted build of UI/ (see UI/scripts/prerender-static.mjs) — a
+# directory-per-route layout with an index.html in each, plus a shared assets/ dir.
+DIST_DIR = Path(__file__).resolve().parent.parent / "UI" / ".output" / "public"
 
 if DIST_DIR.exists():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        file_path = DIST_DIR / full_path
-        if file_path.is_file():
-            return FileResponse(file_path)
+        candidate = DIST_DIR / full_path
+        if candidate.is_file():
+            return FileResponse(candidate)
+        index_candidate = candidate / "index.html"
+        if index_candidate.is_file():
+            return FileResponse(index_candidate)
         return FileResponse(DIST_DIR / "index.html")

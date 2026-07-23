@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Session } from "@supabase/supabase-js";
+import { api, ApiError, clearAdminToken, getAdminToken, setAdminToken } from "@/lib/api";
 import { Leaf, LogOut, Loader2, Calendar, Mail, RefreshCw, Trash2, CheckCircle2, Clock, Phone, MapPin } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
@@ -15,40 +14,20 @@ export const Route = createFileRoute("/admin")({
 });
 
 type Booking = {
-  id: string; name: string; email: string; phone: string; address: string;
-  service: string; lawn_size: string | null; preferred_date: string | null;
+  id: number; name: string; email: string; phone: string; address: string;
+  frequency: string; lawn_size: string | null; preferred_date: string | null;
   notes: string | null; status: string; created_at: string;
 };
 type Message = {
-  id: string; name: string; email: string; phone: string | null;
+  id: number; name: string; email: string; phone: string | null;
   subject: string; message: string; status: string; created_at: string;
 };
 
 function AdminPage() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [checking, setChecking] = useState(true);
-  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [token, setToken] = useState<string | null>(() => getAdminToken());
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setChecking(false);
-    });
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    if (!session) { setIsAdmin(null); return; }
-    supabase.from("user_roles").select("role").eq("user_id", session.user.id).eq("role", "admin").maybeSingle()
-      .then(({ data }) => setIsAdmin(!!data));
-  }, [session]);
-
-  if (checking) return <FullScreenLoader />;
-  if (!session) return <AuthGate />;
-  if (isAdmin === null) return <FullScreenLoader />;
-  if (!isAdmin) return <NotAuthorized email={session.user.email ?? ""} />;
-  return <Dashboard email={session.user.email ?? ""} />;
+  if (!token) return <AuthGate onSuccess={setToken} />;
+  return <Dashboard onAuthError={() => { clearAdminToken(); setToken(null); }} />;
 }
 
 function FullScreenLoader() {
@@ -59,8 +38,7 @@ function FullScreenLoader() {
   );
 }
 
-function AuthGate() {
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+function AuthGate({ onSuccess }: { onSuccess: (token: string) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,18 +46,17 @@ function AuthGate() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(null); setBusy(true);
-    if (mode === "signin") {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) setErr(error.message);
-    } else {
-      const { error } = await supabase.auth.signUp({
-        email, password,
-        options: { emailRedirectTo: `${window.location.origin}/admin` },
-      });
-      if (error) setErr(error.message);
+    setErr(null);
+    setBusy(true);
+    try {
+      const { access_token } = await api.adminLogin(email, password);
+      setAdminToken(access_token);
+      onSuccess(access_token);
+    } catch (error) {
+      setErr(error instanceof ApiError ? error.message : "Sign in failed. Please try again.");
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   return (
@@ -93,9 +70,7 @@ function AuthGate() {
         </Link>
         <div className="rounded-3xl border border-primary/10 bg-card p-8 shadow-2xl">
           <h1 className="font-display text-2xl font-extrabold">Staff Portal</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {mode === "signin" ? "Sign in to manage bookings and messages." : "First-time setup — the first account created becomes the admin."}
-          </p>
+          <p className="mt-2 text-sm text-muted-foreground">Sign in to manage bookings and messages.</p>
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             <div>
               <label className="block text-xs font-bold uppercase tracking-widest text-muted-foreground">Email</label>
@@ -109,12 +84,9 @@ function AuthGate() {
             </div>
             {err && <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{err}</p>}
             <button disabled={busy} type="submit" className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-primary px-6 py-3 text-sm font-bold text-primary-foreground disabled:opacity-60">
-              {busy ? <Loader2 className="size-4 animate-spin" /> : mode === "signin" ? "Sign in" : "Create account"}
+              {busy ? <Loader2 className="size-4 animate-spin" /> : "Sign in"}
             </button>
           </form>
-          <button onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setErr(null); }} className="mt-6 w-full text-center text-xs font-semibold text-primary hover:underline">
-            {mode === "signin" ? "First time here? Create the admin account →" : "← Back to sign in"}
-          </button>
         </div>
         <Link to="/" className="mt-6 block text-center text-xs text-muted-foreground hover:text-primary">← Back to site</Link>
       </div>
@@ -122,19 +94,7 @@ function AuthGate() {
   );
 }
 
-function NotAuthorized({ email }: { email: string }) {
-  return (
-    <div className="grid min-h-screen place-items-center bg-background px-6">
-      <div className="max-w-md text-center">
-        <h1 className="font-display text-3xl font-extrabold">Not authorized</h1>
-        <p className="mt-3 text-muted-foreground">Signed in as {email}, but this account doesn't have admin access.</p>
-        <button onClick={() => supabase.auth.signOut()} className="mt-6 rounded-full bg-primary px-6 py-3 text-sm font-bold text-primary-foreground">Sign out</button>
-      </div>
-    </div>
-  );
-}
-
-function Dashboard({ email }: { email: string }) {
+function Dashboard({ onAuthError }: { onAuthError: () => void }) {
   const [tab, setTab] = useState<"bookings" | "messages">("bookings");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -142,36 +102,44 @@ function Dashboard({ email }: { email: string }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [b, m] = await Promise.all([
-      supabase.from("bookings").select("*").order("created_at", { ascending: false }),
-      supabase.from("contact_messages").select("*").order("created_at", { ascending: false }),
-    ]);
-    setBookings((b.data as Booking[]) ?? []);
-    setMessages((m.data as Message[]) ?? []);
-    setLoading(false);
-  }, []);
+    try {
+      const [b, m] = await Promise.all([
+        api.listBookings() as Promise<Booking[]>,
+        api.listContacts() as Promise<Message[]>,
+      ]);
+      setBookings(b);
+      setMessages(m);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onAuthError();
+        return;
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [onAuthError]);
 
   useEffect(() => { load(); }, [load]);
 
   const pendingCount = bookings.filter(b => b.status === "pending").length;
   const newCount = messages.filter(m => m.status === "new").length;
 
-  async function updateBooking(id: string, status: string) {
-    await supabase.from("bookings").update({ status, updated_at: new Date().toISOString() }).eq("id", id);
+  async function updateBooking(id: number, status: string) {
+    await api.updateBookingStatus(id, status);
     load();
   }
-  async function deleteBooking(id: string) {
+  async function deleteBooking(id: number) {
     if (!confirm("Delete this booking?")) return;
-    await supabase.from("bookings").delete().eq("id", id);
+    await api.deleteBooking(id);
     load();
   }
-  async function updateMessage(id: string, status: string) {
-    await supabase.from("contact_messages").update({ status }).eq("id", id);
+  async function updateMessage(id: number, status: string) {
+    await api.updateContactStatus(id, status);
     load();
   }
-  async function deleteMessage(id: string) {
+  async function deleteMessage(id: number) {
     if (!confirm("Delete this message?")) return;
-    await supabase.from("contact_messages").delete().eq("id", id);
+    await api.deleteContact(id);
     load();
   }
 
@@ -186,11 +154,10 @@ function Dashboard({ email }: { email: string }) {
             <span className="font-display text-lg font-extrabold">Admin</span>
           </Link>
           <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-muted-foreground sm:inline">{email}</span>
             <button onClick={load} className="rounded-lg border border-primary/15 p-2 hover:bg-secondary" title="Refresh">
               <RefreshCw className="size-4" />
             </button>
-            <button onClick={() => supabase.auth.signOut()} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/15 px-3 py-2 text-xs font-bold hover:bg-secondary">
+            <button onClick={onAuthError} className="inline-flex items-center gap-1.5 rounded-lg border border-primary/15 px-3 py-2 text-xs font-bold hover:bg-secondary">
               <LogOut className="size-3.5" /> Sign out
             </button>
           </div>
@@ -260,7 +227,7 @@ function Empty({ text }: { text: string }) {
 function statusBadge(s: string) {
   const map: Record<string, string> = {
     pending: "bg-accent/30 text-primary",
-    confirmed: "bg-primary/10 text-primary",
+    approved: "bg-primary/10 text-primary",
     completed: "bg-green-100 text-green-800",
     cancelled: "bg-destructive/10 text-destructive",
     new: "bg-accent/30 text-primary",
@@ -270,7 +237,7 @@ function statusBadge(s: string) {
   return `rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest ${map[s] ?? "bg-muted"}`;
 }
 
-function BookingCard({ b, onStatus, onDelete }: { b: Booking; onStatus: (id: string, s: string) => void; onDelete: (id: string) => void }) {
+function BookingCard({ b, onStatus, onDelete }: { b: Booking; onStatus: (id: number, s: string) => void; onDelete: (id: number) => void }) {
   return (
     <article className="rounded-2xl border border-primary/10 bg-background p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -280,14 +247,14 @@ function BookingCard({ b, onStatus, onDelete }: { b: Booking; onStatus: (id: str
             <span className={statusBadge(b.status)}>{b.status}</span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            {new Date(b.created_at).toLocaleString()} · <span className="font-semibold text-primary">{b.service}</span>
+            {new Date(b.created_at).toLocaleString()} · <span className="font-semibold text-primary">{b.frequency}</span>
           </p>
         </div>
         <div className="flex gap-2">
           <select value={b.status} onChange={e => onStatus(b.id, e.target.value)}
             className="rounded-lg border border-primary/15 bg-background px-3 py-1.5 text-xs font-semibold">
             <option value="pending">Pending</option>
-            <option value="confirmed">Confirmed</option>
+            <option value="approved">Approved</option>
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
@@ -308,7 +275,7 @@ function BookingCard({ b, onStatus, onDelete }: { b: Booking; onStatus: (id: str
   );
 }
 
-function MessageCard({ m, onStatus, onDelete }: { m: Message; onStatus: (id: string, s: string) => void; onDelete: (id: string) => void }) {
+function MessageCard({ m, onStatus, onDelete }: { m: Message; onStatus: (id: number, s: string) => void; onDelete: (id: number) => void }) {
   return (
     <article className="rounded-2xl border border-primary/10 bg-background p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">

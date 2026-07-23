@@ -48,9 +48,11 @@ TIME_WINDOW_LABELS = {
 }
 
 
-def booking_confirmation_html(name: str, reference: str, address: str, frequency: str, preferred_date=None, preferred_time: str = None) -> str:
+def booking_confirmation_html(name: str, reference: str, address: str, frequency: str, preferred_date=None, preferred_time: str = None, lawn_size: str = None, notes: str = None) -> str:
     date_display = preferred_date.strftime("%B %-d, %Y") if preferred_date else "To be scheduled"
     time_display = TIME_WINDOW_LABELS.get(preferred_time, preferred_time or "To be scheduled")
+    lawn_size_row = f'<p><strong>Lawn Size:</strong> {lawn_size}</p>' if lawn_size else ""
+    notes_row = f'<p><strong>Notes:</strong> {notes}</p>' if notes else ""
     return f"""
     <!DOCTYPE html>
     <html>
@@ -83,9 +85,11 @@ def booking_confirmation_html(name: str, reference: str, address: str, frequency
                 <p>Your service request has been received. An Aveness estate specialist will review your request and contact you within one business day.</p>
                 <div class="details">
                     <p><strong>Property Address:</strong> {address}</p>
-                    <p><strong>Service Frequency:</strong> {frequency.title()}</p>
+                    <p><strong>Service:</strong> {frequency.title()}</p>
                     <p><strong>Preferred Start Date:</strong> {date_display}</p>
                     <p><strong>Preferred Time:</strong> {time_display}</p>
+                    {lawn_size_row}
+                    {notes_row}
                     <p><strong>Status:</strong> Pending Review</p>
                 </div>
                 <p>We appreciate your interest in Aveness. Our team is committed to providing the highest standard of estate lawncare in Naples, Florida.</p>

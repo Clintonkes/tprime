@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { SiteNav, SiteFooter, BUSINESS } from "@/components/site-layout";
 import { useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { api, ApiError } from "@/lib/api";
 import { ArrowRight, CheckCircle2, Phone, Mail, MapPin, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/book")({
@@ -43,15 +43,20 @@ function BookPage() {
     }
     setStatus("submitting");
     const payload = {
-      ...parsed.data,
+      name: parsed.data.name,
+      email: parsed.data.email,
+      phone: parsed.data.phone,
+      address: parsed.data.address,
+      frequency: parsed.data.service,
       lawn_size: parsed.data.lawn_size || null,
       preferred_date: parsed.data.preferred_date || null,
       notes: parsed.data.notes || null,
     };
-    const { error: err } = await supabase.from("bookings").insert(payload);
-    if (err) {
+    try {
+      await api.createBooking(payload);
+    } catch (err) {
       setStatus("error");
-      setError("We couldn't submit your request. Please call us or try again.");
+      setError(err instanceof ApiError ? err.message : "We couldn't submit your request. Please call us or try again.");
       return;
     }
     setStatus("success");

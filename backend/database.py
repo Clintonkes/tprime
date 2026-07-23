@@ -37,6 +37,8 @@ class Booking(Base):
     phone = Column(String, nullable=True)
     preferred_date = Column(Date, nullable=True)
     preferred_time = Column(String, nullable=True)
+    lawn_size = Column(String, nullable=True)
+    notes = Column(Text, nullable=True)
     status = Column(String, default=BookingStatus.pending.value)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -51,6 +53,7 @@ class Contact(Base):
     phone = Column(String, nullable=True)
     subject = Column(String, nullable=True)
     message = Column(Text, nullable=False)
+    status = Column(String, default="new")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -69,14 +72,25 @@ def _ensure_columns():
     `bookings` table up to date with the current model on startup.
     """
     inspector = inspect(engine)
-    if "bookings" not in inspector.get_table_names():
-        return
-    existing = {col["name"] for col in inspector.get_columns("bookings")}
-    with engine.begin() as conn:
-        if "preferred_date" not in existing:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN preferred_date DATE"))
-        if "preferred_time" not in existing:
-            conn.execute(text("ALTER TABLE bookings ADD COLUMN preferred_time VARCHAR"))
+    table_names = inspector.get_table_names()
+
+    if "bookings" in table_names:
+        existing = {col["name"] for col in inspector.get_columns("bookings")}
+        with engine.begin() as conn:
+            if "preferred_date" not in existing:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN preferred_date DATE"))
+            if "preferred_time" not in existing:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN preferred_time VARCHAR"))
+            if "lawn_size" not in existing:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN lawn_size VARCHAR"))
+            if "notes" not in existing:
+                conn.execute(text("ALTER TABLE bookings ADD COLUMN notes TEXT"))
+
+    if "contacts" in table_names:
+        existing = {col["name"] for col in inspector.get_columns("contacts")}
+        with engine.begin() as conn:
+            if "status" not in existing:
+                conn.execute(text("ALTER TABLE contacts ADD COLUMN status VARCHAR DEFAULT 'new'"))
 
 
 def init_db():

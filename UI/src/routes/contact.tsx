@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { SiteNav, SiteFooter, BUSINESS } from "@/components/site-layout";
 import { useState } from "react";
 import { z } from "zod";
-import { supabase } from "@/integrations/supabase/client";
+import { api, ApiError } from "@/lib/api";
 import { ArrowRight, CheckCircle2, Phone, Mail, MapPin, Clock, Loader2 } from "lucide-react";
 
 export const Route = createFileRoute("/contact")({
@@ -38,11 +38,13 @@ function ContactPage() {
       return;
     }
     setStatus("submitting");
-    const { error: err } = await supabase.from("contact_messages").insert({
-      ...parsed.data,
-      phone: parsed.data.phone || null,
-    });
-    if (err) { setStatus("error"); setError("Something went wrong. Please call us."); return; }
+    try {
+      await api.createContact({ ...parsed.data, phone: parsed.data.phone || null });
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Please call us.");
+      return;
+    }
     setStatus("success");
     (e.target as HTMLFormElement).reset();
   }
