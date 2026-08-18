@@ -39,6 +39,14 @@ class BookingStatusUpdate(BaseModel):
     status: str
 
 
+class BookingsPage(BaseModel):
+    items: list[BookingResponse]
+    total: int
+    page: int
+    page_size: int
+    pending_count: int
+
+
 class ContactCreate(BaseModel):
     name: str
     email: EmailStr
@@ -63,6 +71,14 @@ class ContactResponse(BaseModel):
 
 class ContactStatusUpdate(BaseModel):
     status: str
+
+
+class ContactsPage(BaseModel):
+    items: list[ContactResponse]
+    total: int
+    page: int
+    page_size: int
+    new_count: int
 
 
 class AdminLogin(BaseModel):

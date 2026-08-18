@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -12,10 +12,12 @@ from pathlib import Path
 
 from database import init_db, get_db, Booking, Contact, Admin
 from schemas import (
-    BookingCreate, BookingResponse, BookingStatusUpdate,
-    ContactCreate, ContactResponse, ContactStatusUpdate,
+    BookingCreate, BookingResponse, BookingStatusUpdate, BookingsPage,
+    ContactCreate, ContactResponse, ContactStatusUpdate, ContactsPage,
     AdminLogin, Token,
 )
+
+PAGE_SIZE = 10
 from auth import verify_password, get_password_hash, create_access_token, get_current_admin
 from email_service import (
     send_email, booking_confirmation_html, booking_status_html,
@@ -28,6 +30,11 @@ origins = [
     "http://localhost:5173",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
+    # Production frontend (GitHub Pages + custom domain)
+    "https://jasparkle.com",
+    "https://www.jasparkle.com",
+    # GitHub Pages fallback (before custom domain is configured)
+    "https://clintonkes.github.io",
 ]
 render_url = os.getenv("RENDER_EXTERNAL_URL")
 if render_url:
@@ -80,7 +87,15 @@ def _generate_reference():
     return f"AVN-{ts}{rand}"
 
 
+# ── Health Check ──────────────────────────────────────────────────
+
+@app.get("/api/health")
+def health_check():
+    return {"status": "ok"}
+
+
 # ── Public Endpoints ──────────────────────────────────────────────
+
 
 @app.post("/api/bookings", response_model=BookingResponse, status_code=201)
 def create_booking(data: BookingCreate, db: Session = Depends(get_db)):
@@ -174,12 +189,20 @@ def admin_login(data: AdminLogin, db: Session = Depends(get_db)):
 
 # ── Admin Endpoints ───────────────────────────────────────────────
 
-@app.get("/api/admin/bookings", response_model=list[BookingResponse])
+@app.get("/api/admin/bookings", response_model=BookingsPage)
 def list_bookings(
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     admin: Admin = Depends(get_current_admin),
 ):
-    return db.query(Booking).order_by(Booking.created_at.desc()).all()
+    query = db.query(Booking).order_by(Booking.created_at.desc())
+    total = query.count()
+    pending_count = db.query(Booking).filter(Booking.status == "pending").count()
+    items = query.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+    return {
+        "items": items, "total": total, "page": page, "page_size": PAGE_SIZE,
+        "pending_count": pending_count,
+    }
 
 
 @app.patch("/api/admin/bookings/{booking_id}", response_model=BookingResponse)
@@ -228,12 +251,20 @@ def delete_booking(
     db.commit()
 
 
-@app.get("/api/admin/contacts", response_model=list[ContactResponse])
+@app.get("/api/admin/contacts", response_model=ContactsPage)
 def list_contacts(
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     admin: Admin = Depends(get_current_admin),
 ):
-    return db.query(Contact).order_by(Contact.created_at.desc()).all()
+    query = db.query(Contact).order_by(Contact.created_at.desc())
+    total = query.count()
+    new_count = db.query(Contact).filter(Contact.status == "new").count()
+    items = query.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+    return {
+        "items": items, "total": total, "page": page, "page_size": PAGE_SIZE,
+        "new_count": new_count,
+    }
 
 
 @app.patch("/api/admin/contacts/{contact_id}", response_model=ContactResponse)

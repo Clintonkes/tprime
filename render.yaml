@@ -1,9 +1,22 @@
 services:
   - type: web
     name: tprime
-    runtime: node
-    buildCommand: cd UI && npm install && npm run build && cd ../backend && pip install -r requirements.txt
-    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    # Render will automatically set RENDER_EXTERNAL_URL to the service's public URL
+    healthCheckPath: /api/health
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.13"
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false

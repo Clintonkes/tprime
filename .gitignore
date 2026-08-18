@@ -50,3 +50,4 @@ pnpm-debug.log*
 !.yarn/versions
 *.pdf
 *.pdf:Zone.Identifier
+backend/set_admin.py

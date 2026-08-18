@@ -1,7 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback } from "react";
 import { api, ApiError, clearAdminToken, getAdminToken, setAdminToken } from "@/lib/api";
-import { Leaf, LogOut, Loader2, Calendar, Mail, RefreshCw, Trash2, CheckCircle2, Clock, Phone, MapPin } from "lucide-react";
+import { Leaf, LogOut, Loader2, Calendar, Mail, RefreshCw, Trash2, CheckCircle2, Clock, Phone, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE = 10;
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -97,18 +99,32 @@ function AuthGate({ onSuccess }: { onSuccess: (token: string) => void }) {
 function Dashboard({ onAuthError }: { onAuthError: () => void }) {
   const [tab, setTab] = useState<"bookings" | "messages">("bookings");
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingsTotal, setBookingsTotal] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [bookingsPage, setBookingsPage] = useState(1);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesTotal, setMessagesTotal] = useState(0);
+  const [newCount, setNewCount] = useState(0);
+  const [messagesPage, setMessagesPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const [b, m] = await Promise.all([
-        api.listBookings() as Promise<Booking[]>,
-        api.listContacts() as Promise<Message[]>,
+        api.listBookings(bookingsPage) as Promise<{
+          items: Booking[]; total: number; pending_count: number;
+        }>,
+        api.listContacts(messagesPage) as Promise<{
+          items: Message[]; total: number; new_count: number;
+        }>,
       ]);
-      setBookings(b);
-      setMessages(m);
+      setBookings(b.items);
+      setBookingsTotal(b.total);
+      setPendingCount(b.pending_count);
+      setMessages(m.items);
+      setMessagesTotal(m.total);
+      setNewCount(m.new_count);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onAuthError();
@@ -117,12 +133,9 @@ function Dashboard({ onAuthError }: { onAuthError: () => void }) {
     } finally {
       setLoading(false);
     }
-  }, [onAuthError]);
+  }, [onAuthError, bookingsPage, messagesPage]);
 
   useEffect(() => { load(); }, [load]);
-
-  const pendingCount = bookings.filter(b => b.status === "pending").length;
-  const newCount = messages.filter(m => m.status === "new").length;
 
   async function updateBooking(id: number, status: string) {
     await api.updateBookingStatus(id, status);
@@ -131,7 +144,8 @@ function Dashboard({ onAuthError }: { onAuthError: () => void }) {
   async function deleteBooking(id: number) {
     if (!confirm("Delete this booking?")) return;
     await api.deleteBooking(id);
-    load();
+    if (bookings.length === 1 && bookingsPage > 1) setBookingsPage(p => p - 1);
+    else load();
   }
   async function updateMessage(id: number, status: string) {
     await api.updateContactStatus(id, status);
@@ -140,7 +154,8 @@ function Dashboard({ onAuthError }: { onAuthError: () => void }) {
   async function deleteMessage(id: number) {
     if (!confirm("Delete this message?")) return;
     await api.deleteContact(id);
-    load();
+    if (messages.length === 1 && messagesPage > 1) setMessagesPage(p => p - 1);
+    else load();
   }
 
   return (
@@ -168,14 +183,14 @@ function Dashboard({ onAuthError }: { onAuthError: () => void }) {
         <h1 className="font-display text-3xl font-extrabold">Dashboard</h1>
 
         <div className="mt-6 grid gap-4 sm:grid-cols-3">
-          <StatCard icon={Calendar} label="Total Bookings" value={bookings.length} />
+          <StatCard icon={Calendar} label="Total Bookings" value={bookingsTotal} />
           <StatCard icon={Clock} label="Pending Bookings" value={pendingCount} accent />
           <StatCard icon={Mail} label="New Messages" value={newCount} accent />
         </div>
 
         <div className="mt-8 flex gap-2 rounded-full bg-background p-1 shadow-sm ring-1 ring-primary/10 w-fit">
-          <TabBtn active={tab === "bookings"} onClick={() => setTab("bookings")}>Bookings ({bookings.length})</TabBtn>
-          <TabBtn active={tab === "messages"} onClick={() => setTab("messages")}>Messages ({messages.length})</TabBtn>
+          <TabBtn active={tab === "bookings"} onClick={() => setTab("bookings")}>Bookings ({bookingsTotal})</TabBtn>
+          <TabBtn active={tab === "messages"} onClick={() => setTab("messages")}>Messages ({messagesTotal})</TabBtn>
         </div>
 
         <div className="mt-6">
@@ -183,15 +198,21 @@ function Dashboard({ onAuthError }: { onAuthError: () => void }) {
             <div className="grid place-items-center py-20"><Loader2 className="size-6 animate-spin text-primary" /></div>
           ) : tab === "bookings" ? (
             bookings.length === 0 ? <Empty text="No bookings yet." /> : (
-              <div className="grid gap-4">
-                {bookings.map(b => <BookingCard key={b.id} b={b} onStatus={updateBooking} onDelete={deleteBooking} />)}
-              </div>
+              <>
+                <div className="grid gap-4">
+                  {bookings.map(b => <BookingCard key={b.id} b={b} onStatus={updateBooking} onDelete={deleteBooking} />)}
+                </div>
+                <Pagination page={bookingsPage} total={bookingsTotal} onChange={setBookingsPage} />
+              </>
             )
           ) : (
             messages.length === 0 ? <Empty text="No messages yet." /> : (
-              <div className="grid gap-4">
-                {messages.map(m => <MessageCard key={m.id} m={m} onStatus={updateMessage} onDelete={deleteMessage} />)}
-              </div>
+              <>
+                <div className="grid gap-4">
+                  {messages.map(m => <MessageCard key={m.id} m={m} onStatus={updateMessage} onDelete={deleteMessage} />)}
+                </div>
+                <Pagination page={messagesPage} total={messagesTotal} onChange={setMessagesPage} />
+              </>
             )
           )}
         </div>
@@ -222,6 +243,30 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
 
 function Empty({ text }: { text: string }) {
   return <div className="rounded-2xl border border-dashed border-primary/20 bg-background p-16 text-center text-sm text-muted-foreground">{text}</div>;
+}
+
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (page: number) => void }) {
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  if (totalPages <= 1) return null;
+  return (
+    <div className="mt-6 flex items-center justify-center gap-4">
+      <button
+        onClick={() => onChange(page - 1)}
+        disabled={page <= 1}
+        className="inline-flex items-center gap-1 rounded-lg border border-primary/15 px-3 py-2 text-xs font-bold hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        <ChevronLeft className="size-3.5" /> Previous
+      </button>
+      <span className="text-xs font-semibold text-muted-foreground">Page {page} of {totalPages}</span>
+      <button
+        onClick={() => onChange(page + 1)}
+        disabled={page >= totalPages}
+        className="inline-flex items-center gap-1 rounded-lg border border-primary/15 px-3 py-2 text-xs font-bold hover:bg-secondary disabled:opacity-40 disabled:hover:bg-transparent"
+      >
+        Next <ChevronRight className="size-3.5" />
+      </button>
+    </div>
+  );
 }
 
 function statusBadge(s: string) {

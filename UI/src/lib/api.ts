@@ -56,11 +56,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
-  listBookings: () => request("/api/admin/bookings", {}, true),
+  listBookings: (page: number) => request(`/api/admin/bookings?page=${page}`, {}, true),
   updateBookingStatus: (id: number, status: string) =>
     request(`/api/admin/bookings/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }, true),
   deleteBooking: (id: number) => request(`/api/admin/bookings/${id}`, { method: "DELETE" }, true),
-  listContacts: () => request("/api/admin/contacts", {}, true),
+  listContacts: (page: number) => request(`/api/admin/contacts?page=${page}`, {}, true),
   updateContactStatus: (id: number, status: string) =>
     request(`/api/admin/contacts/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }, true),
   deleteContact: (id: number) => request(`/api/admin/contacts/${id}`, { method: "DELETE" }, true),

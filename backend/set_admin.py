@@ -12,6 +12,7 @@ Examples:
 
 import sys
 import os
+import time
 from urllib.parse import urlsplit
 
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,8 +21,24 @@ sys.path.insert(0, BACKEND_DIR)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(BACKEND_DIR, "..", ".env"))
 
+from sqlalchemy.exc import OperationalError
 from database import SessionLocal, Base, engine, Admin
 from auth import get_password_hash
+
+
+def _with_retries(fn, attempts=5, base_delay=2):
+    """Neon (and other scale-to-zero Postgres) suspends its compute when idle, and the
+    first connection that wakes it can get dropped mid-handshake. Retry with backoff
+    instead of failing on that transient case."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except OperationalError as e:
+            if attempt == attempts:
+                raise
+            delay = base_delay * attempt
+            print(f"Connection attempt {attempt}/{attempts} failed ({e.orig}); retrying in {delay}s...")
+            time.sleep(delay)
 
 
 def describe_target(url: str) -> str:
@@ -63,11 +80,11 @@ def main():
             sys.exit(1)
 
     print("Connecting to database...")
-    Base.metadata.create_all(bind=engine)
+    _with_retries(lambda: Base.metadata.create_all(bind=engine))
     db = SessionLocal()
 
     try:
-        existing = db.query(Admin).first()
+        existing = _with_retries(lambda: db.query(Admin).first())
 
         if existing:
             existing.email = email
