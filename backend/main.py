@@ -1,14 +1,11 @@
 from fastapi import FastAPI, Depends, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
 import time
 import random
 import string
 import os
-from pathlib import Path
 
 from database import init_db, get_db, Booking, Contact, Admin
 from schemas import (
@@ -17,12 +14,13 @@ from schemas import (
     AdminLogin, Token,
 )
 
-PAGE_SIZE = 10
 from auth import verify_password, get_password_hash, create_access_token, get_current_admin
 from email_service import (
     send_email, booking_confirmation_html, booking_status_html,
     contact_confirmation_html, contact_admin_notification_html,
 )
+
+PAGE_SIZE = 10
 
 app = FastAPI(title="Aveness API", version="1.0.0")
 
@@ -31,8 +29,8 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     # Production frontend (GitHub Pages + custom domain)
-    "https://jasparkle.com",
-    "https://www.jasparkle.com",
+    "https://tprimelawncare.com",
+    "https://www.tprimelawncare.com",
     # GitHub Pages fallback (before custom domain is configured)
     "https://clintonkes.github.io",
 ]
@@ -326,20 +324,8 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
-# ── Static Frontend (must be last) ───────────────────────────────
-# Statically snapshotted build of UI/ (see UI/scripts/prerender-static.mjs) — a
-# directory-per-route layout with an index.html in each, plus a shared assets/ dir.
-DIST_DIR = Path(__file__).resolve().parent.parent / "UI" / ".output" / "public"
-
-if DIST_DIR.exists():
-    app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
-
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        candidate = DIST_DIR / full_path
-        if candidate.is_file():
-            return FileResponse(candidate)
-        index_candidate = candidate / "index.html"
-        if index_candidate.is_file():
-            return FileResponse(index_candidate)
-        return FileResponse(DIST_DIR / "index.html")
+# The frontend is deployed separately on GitHub Pages (see .github/workflows/frontend.yml)
+# — this service is the API only.
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "tprime-api"}

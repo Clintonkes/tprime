@@ -41,9 +41,9 @@ jobs:
       - name: Create SPA 404 fallback
         run: cp .output/public/index.html .output/public/404.html
 
-      # Custom domain — tells GitHub Pages to serve this site at jasparkle.com
+      # Custom domain — tells GitHub Pages to serve this site at tprimelawncare.com
       - name: Write CNAME
-        run: echo "jasparkle.com" > .output/public/CNAME
+        run: echo "tprimelawncare.com" > .output/public/CNAME
 
       - uses: actions/upload-pages-artifact@v3
         with:
