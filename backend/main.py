@@ -29,8 +29,8 @@ origins = [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     # Production frontend (GitHub Pages + custom domain)
-    "https://tprimelawncare.com",
-    "https://www.tprimelawncare.com",
+    "https://tprimelawncare.org",
+    "https://www.tprimelawncare.org",
     # GitHub Pages fallback (before custom domain is configured)
     "https://clintonkes.github.io",
 ]
